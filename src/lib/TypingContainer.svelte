@@ -243,7 +243,7 @@
         display: inline-block;
         position: relative;
 
-        height: 30px;
+        height: calc(min(5vw, 28px) + 3px);
         margin-bottom: -5px;
     }
 
