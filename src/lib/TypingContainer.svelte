@@ -1,0 +1,281 @@
+<script context="module" lang="ts">
+  export interface TagAttrs {
+    [key: string]: string;
+  }
+
+  export type Event = { text: string } | { tag: string, tag_attrs?: TagAttrs } | { closeTag: string };
+  export type TextWithEvents = Event[];
+</script>
+
+<script lang="ts">
+  export let available_texts: (string | TextWithEvents)[];
+  export let single_mode = false;
+
+  const CPM = 1000;
+  const CPS = CPM / 60;
+  const HOLD_TIME = [7, 10, 100];
+  const DELETE_SPEEDUP = 5;
+
+  const fmt_tag = (tag: { tag: string, tag_attrs?: TagAttrs }): string => {
+    let attrs = Object.entries(tag.tag_attrs || {}).map(([key, value]) => `${key}="${value}"`).join(" ");
+    if (attrs !== "") {
+      attrs = ` ${attrs}`;
+    }
+    return `<${tag.tag}${attrs}>`;
+  };
+
+  const compute_len = (text: string | TextWithEvents): number => {
+    if (typeof text === "string") {
+      return text.length;
+    }
+
+    let len = 0;
+    for (const e of text) {
+      if (e.text) {
+        len += e.text.length;
+      }
+      if (e.tag) {
+        len += fmt_tag(e).length;
+      }
+      if (e.closeTag) {
+        len += `</${e.closeTag}>`.length;
+      }
+    }
+
+    return len;
+  };
+
+  let index = 0;
+  let text: string | TextWithEvents = available_texts[index];
+  let totalLen = compute_len(text);
+
+  let hold_state = -1;
+  let hold_offset = 0;
+
+  const raiseIndex = () => {
+    index = (index + 1) % available_texts.length;
+  };
+
+  let type_offset = 0;
+
+  let caret_pos = 0;
+  let left: string, right: string;
+  let tag_end = -1;
+  let increase = true;
+
+  $: {
+    text = available_texts[index];
+    totalLen = compute_len(text);
+  }
+
+  const render = (
+    caret_pos: number,
+    text: string | TextWithEvents,
+    increasing: boolean
+  ): { left: string, right: string, tag_end: number } => {
+    if (typeof text === "string") {
+      let left = text.substring(0, caret_pos);
+      let right = text.substring(caret_pos);
+
+      return {
+        left,
+        right,
+        tag_end: -1
+      };
+    }
+
+    let left = "";
+    let right = "";
+
+    let tag_stack = [];
+    let end_stack = [];
+
+    let tag_end = -1;
+
+    let len = 0;
+    for (const e of text) {
+      let next_len;
+      if (e.text) {
+        next_len = len + e.text.length;
+      }
+      if (e.tag) {
+        next_len = len + fmt_tag(e).length;
+
+        tag_stack.push(e);
+      }
+      if (e.closeTag) {
+        next_len = len + `</${e.closeTag}>`.length;
+        tag_stack.pop();
+      }
+
+      if (caret_pos >= len && caret_pos < next_len) {
+        end_stack = Array.from(tag_stack);
+
+        if (e.tag || e.closeTag) {
+          tag_end = increasing ? next_len : len;
+        }
+      }
+
+      if (caret_pos >= next_len) {
+        if (e.text) {
+          left += e.text;
+        } else if (e.tag) {
+          left += fmt_tag(e);
+        } else if (e.closeTag) {
+          left += `</${e.closeTag}>`;
+        }
+      } else {
+        if (e.text) {
+          if (caret_pos >= len) {
+            left += e.text.substring(0, caret_pos - len);
+            right += e.text.substring(caret_pos - len);
+          } else {
+            right += e.text;
+          }
+        } else if (e.tag) {
+          if (caret_pos >= len) {
+            left += fmt_tag(e);
+          } else {
+            right += fmt_tag(e);
+          }
+        } else if (e.closeTag) {
+          if (caret_pos >= len) {
+            left += `</${e.closeTag}>`;
+          } else {
+            right += `</${e.closeTag}>`;
+          }
+        }
+      }
+
+      len = next_len;
+    }
+
+    let left_closing = end_stack.map(e => `</${e.tag}>`).reverse().join("");
+    let right_opening = end_stack.map(fmt_tag).join("");
+
+    return {
+      left: left + left_closing,
+      right: right_opening + right,
+      tag_end
+    };
+  };
+
+  $: {
+    let result = render(caret_pos, text, increase);
+    left = result.left;
+    right = result.right;
+    tag_end = result.tag_end;
+  }
+
+  let timer = setInterval(() => {
+    if (hold_state !== -1) {
+      hold_offset += 1;
+
+      if (hold_offset >= HOLD_TIME[hold_state] * DELETE_SPEEDUP) {
+        if (hold_state != 0) {
+          hold_state = -1;
+        } else {
+          hold_state = 1;
+          raiseIndex();
+        }
+        hold_offset = 0;
+      }
+
+      return;
+    }
+    if (increase) {
+      type_offset++;
+      if (type_offset >= DELETE_SPEEDUP) {
+        type_offset = 0;
+      } else {
+        return;
+      }
+
+      if (tag_end !== -1) {
+        caret_pos = tag_end;
+      }
+
+      if (caret_pos >= totalLen) {
+        if (single_mode) {
+          clearInterval(timer);
+          hold_state = 100;
+          return;
+        }
+
+        increase = false;
+
+        hold_state = 2;
+      }
+
+      caret_pos++;
+    } else {
+      if (tag_end !== -1) {
+        caret_pos = tag_end;
+      }
+
+      if (caret_pos <= 0) {
+        increase = true;
+
+        hold_state = 0;
+      }
+
+      caret_pos--;
+    }
+  }, 1000 / CPS / DELETE_SPEEDUP);
+</script>
+
+<div class="typing-text">
+  <span class="typed">{@html left}</span><div class="caret-container-container"><div class="caret-container"><span class="caret"
+                                                                                                                   class:caret-expand="{hold_state !== -1}"></span></div></div><span class="to-type">{@html right}</span>
+</div>
+
+<style>
+    .typing-text {
+        min-height: 50px;
+        line-height: 1.4;
+    }
+
+    .typed {
+
+    }
+
+    .caret-container-container {
+        display: inline-block;
+        position: relative;
+
+        height: 30px;
+        margin-bottom: -5px;
+    }
+
+    .caret-container {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        margin: 0 -1px 0 0;
+        padding: 0;
+
+        height: 100%;
+        position: absolute;
+        bottom: 0;
+    }
+
+    .caret {
+        border-left: 2px solid var(--text-color);
+
+        height: 100%;
+    }
+
+    .to-type {
+        opacity: 0.3;
+    }
+
+    .caret-expand {
+        animation: both caret-expand-animation 0.7s linear infinite alternate;
+    }
+    @keyframes caret-expand-animation {
+        to {
+            height: 0;
+        }
+    }
+</style>
