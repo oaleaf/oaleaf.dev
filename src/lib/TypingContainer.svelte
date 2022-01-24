@@ -13,6 +13,9 @@
   export let available_texts: (string | TextWithEvents)[];
   export let single_mode = false;
   export let install_tab_hook = false;
+  export let on_tab_callback: (() => void) = () => {
+    return;
+  };
 
   if (install_tab_hook && single_mode) {
     console.error("TypingContainer: single_mode and install_tab_hook are mutually exclusive");
@@ -284,6 +287,8 @@
 
         timer = setInterval(compute, INTERVAL_TIME);
 
+        on_tab_callback();
+
         return;
       }
     }
@@ -297,12 +302,14 @@
  -->
 
 <!-- prettier-ignore -->
+<!--@formatter:off-->
 <div class="typing-text">
   <span class="typed">{@html left}</span><div class="caret-container-container">
     <div class="caret-container"><span class="caret"
                                        class:caret-expand="{hold_state !== -1}"></span></div>
   </div><span class="to-type">{@html right}</span>
 </div>
+<!--@formatter:on-->
 
 <style>
     .typing-text {
