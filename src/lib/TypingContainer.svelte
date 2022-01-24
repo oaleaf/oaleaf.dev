@@ -18,7 +18,7 @@
     console.error("TypingContainer: single_mode and install_tab_hook are mutually exclusive");
   }
 
-  const CPM = 2000;
+  const CPM = 1000;
   const CPS = CPM / 60;
   const HOLD_TIME = [7, 10, 100];
   const DELETE_SPEEDUP = 5;
