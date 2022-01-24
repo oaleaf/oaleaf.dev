@@ -60,6 +60,10 @@ a {
     font-size: min(5vw, 28px);
 }
 
+sup u {
+    font-size: min(3vw, 17px);
+}
+
 a:visited {
     color: var(--link-color);
     text-decoration: none;

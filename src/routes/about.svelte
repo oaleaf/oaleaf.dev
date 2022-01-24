@@ -1,25 +1,13 @@
 <script context="module" lang="ts">
-  export const prerender = true;
+  export const prerender = false;
 </script>
 <script lang="ts">
   import TypingContainerSingle from "$lib/TypingContainerSingle.svelte";
-  import TypingContainer, { TextWithEvents } from "$lib/TypingContainer.svelte";
+  import TypingContainer from "$lib/TypingContainer.svelte";
 
-  const available_texts: (string | TextWithEvents)[] = [
-    [
-      { text: "You can find my blog " },
-      { tag: "a", tag_attrs: { href: "https://blog.oaleaf.dev/" } },
-      { text: "here" },
-      { closeTag: "a" },
-      { text: "." }
-    ],
-    [
-      { text: "Or you can go back to " },
-      { tag: "a", tag_attrs: { href: "/" } },
-      { text: "the homepage" },
-      { closeTag: "a" },
-      { text: "." }
-    ]
+  const available_texts: string[] = [
+    'You can find my blog <a href="https://blog.oaleaf.dev/">here</a>.',
+    'Or you can go back to <a href="/">the homepage</a>.',
   ];
 </script>
 
@@ -32,7 +20,7 @@
 
   <TypingContainerSingle text="I wrote some code once. And now I can't stop." />
 
-  <TypingContainer available_texts={available_texts} />
+  <TypingContainer available_texts={available_texts} install_tab_hook={true} />
 </div>
 
 <style>

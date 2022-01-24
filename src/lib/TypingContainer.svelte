@@ -1,27 +1,65 @@
 <script context="module" lang="ts">
+  import * as htmlparser2 from "htmlparser2";
+
   export interface TagAttrs {
     [key: string]: string;
   }
 
-  export type Event = { text: string } | { tag: string, tag_attrs?: TagAttrs } | { closeTag: string };
+  export type Event = { text: string } | { tag: string, tag_attrs?: TagAttrs, close?: boolean } | { closeTag: string };
   export type TextWithEvents = Event[];
 </script>
 
 <script lang="ts">
   export let available_texts: (string | TextWithEvents)[];
   export let single_mode = false;
+  export let install_tab_hook = false;
 
-  const CPM = 1000;
+  if (install_tab_hook && single_mode) {
+    console.error("TypingContainer: single_mode and install_tab_hook are mutually exclusive");
+  }
+
+  const CPM = 2000;
   const CPS = CPM / 60;
   const HOLD_TIME = [7, 10, 100];
   const DELETE_SPEEDUP = 5;
 
-  const fmt_tag = (tag: { tag: string, tag_attrs?: TagAttrs }): string => {
+  const INTERVAL_TIME = 1000 / CPS / DELETE_SPEEDUP;
+
+  const parse = (text: string): TextWithEvents => {
+    let events: TextWithEvents = [];
+
+    const parser = new htmlparser2.Parser({
+        onopentag(name, attrs) {
+          events.push({ tag: name, tag_attrs: attrs });
+        },
+        ontext(text) {
+          events.push({ text });
+        },
+        onclosetag(name) {
+          if (events[events.length - 1].tag === name) {
+            events[events.length - 1].close = true;
+          } else {
+            events.push({ closeTag: name });
+          }
+        }
+      },
+      { decodeEntities: true });
+
+    parser.write(text);
+    parser.end();
+
+    return events;
+  };
+
+  const parsed_texts = available_texts.map(l => typeof l === "string" ? parse(l) : l);
+
+  const fmt_tag = (tag: { tag: string, tag_attrs?: TagAttrs, close?: boolean }): string => {
     let attrs = Object.entries(tag.tag_attrs || {}).map(([key, value]) => `${key}="${value}"`).join(" ");
     if (attrs !== "") {
       attrs = ` ${attrs}`;
     }
-    return `<${tag.tag}${attrs}>`;
+    const closed = tag.close ? "/" : "";
+    return `<${tag.tag}${attrs}${closed}>`;
   };
 
   const compute_len = (text: string | TextWithEvents): number => {
@@ -46,14 +84,14 @@
   };
 
   let index = 0;
-  let text: string | TextWithEvents = available_texts[index];
+  let text: TextWithEvents = parsed_texts[index];
   let totalLen = compute_len(text);
 
   let hold_state = -1;
   let hold_offset = 0;
 
   const raiseIndex = () => {
-    index = (index + 1) % available_texts.length;
+    index = (index + 1) % parsed_texts.length;
   };
 
   let type_offset = 0;
@@ -64,7 +102,7 @@
   let increase = true;
 
   $: {
-    text = available_texts[index];
+    text = parsed_texts[index];
     totalLen = compute_len(text);
   }
 
@@ -101,7 +139,9 @@
       if (e.tag) {
         next_len = len + fmt_tag(e).length;
 
-        tag_stack.push(e);
+        if (!e.close) {
+          tag_stack.push(e);
+        }
       }
       if (e.closeTag) {
         next_len = len + `</${e.closeTag}>`.length;
@@ -167,7 +207,9 @@
     tag_end = result.tag_end;
   }
 
-  let timer = setInterval(() => {
+  let timer;
+
+  const compute = () => {
     if (hold_state !== -1) {
       hold_offset += 1;
 
@@ -221,12 +263,45 @@
 
       caret_pos--;
     }
-  }, 1000 / CPS / DELETE_SPEEDUP);
+  };
+
+  timer = setInterval(compute, INTERVAL_TIME);
+
+  const handleKeydown = (event) => {
+    if (install_tab_hook) {
+      if (event.key === "Tab") {
+        event.preventDefault();
+
+        clearInterval(timer);
+
+        hold_state = 1;
+        hold_offset = 0;
+
+        caret_pos = 0;
+        increase = true;
+
+        raiseIndex();
+
+        timer = setInterval(compute, INTERVAL_TIME);
+
+        return;
+      }
+    }
+  };
 </script>
 
+<svelte:window on:keydown={handleKeydown} />
+
+<!-- spaces between the `span.typed`, `div.caret-container-container` and `span.to-type`
+ show up and they are ugly, so prettier should not to format this
+ -->
+
+<!-- prettier-ignore -->
 <div class="typing-text">
-  <span class="typed">{@html left}</span><div class="caret-container-container"><div class="caret-container"><span class="caret"
-                                                                                                                   class:caret-expand="{hold_state !== -1}"></span></div></div><span class="to-type">{@html right}</span>
+  <span class="typed">{@html left}</span><div class="caret-container-container">
+    <div class="caret-container"><span class="caret"
+                                       class:caret-expand="{hold_state !== -1}"></span></div>
+  </div><span class="to-type">{@html right}</span>
 </div>
 
 <style>
@@ -273,6 +348,7 @@
     .caret-expand {
         animation: both caret-expand-animation 0.7s linear infinite alternate;
     }
+
     @keyframes caret-expand-animation {
         to {
             height: 0;
