@@ -2,7 +2,8 @@
 
 body {
     --text-color: #c1c1c1;
-    --main-color: #1b2b0b;
+    --primary-color: #1b2b0b;
+    --secondary-color: #0aa99c;
     --link-color: #61dafb;
 
     --background-color: #141414;

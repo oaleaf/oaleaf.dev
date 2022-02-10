@@ -1,0 +1,425 @@
+---
+title: Implementing the typing container (in Svelte)
+date: 2022-01-27
+editedOn: 2022-02-10
+author: oaleaf
+
+tags: [code, js]
+category: site
+
+preview: /typing.png
+
+ref: typing-container
+
+similar:
+  - 'typing-container'
+
+layout: blog_article
+---
+
+In this blog post, I would like to show you how I wrote the "typing container", show you some issues that arose, and
+hopefully help you if you decide to implement something similar.
+
+So first, the typing container is the component that displays the text while "typing":
+
+![img.png](/typing.png)
+
+## Approach
+
+We are going to split the text we are typing into 2 parts: the part we typed already and the part there is left to type:
+
+```html
+<div class='typing-container'>
+  <span class='typed-text'>
+    This is the typed text
+  </span>
+	<span class='caret' />
+	<span class='to-type-text'>
+    This is the remaining text
+  </span>
+</div>
+```
+
+We are going to intuitively call those 2 parts `left` and `right`, as they are to the left and the right of the caret,
+wherever that may be.
+
+[We will do the styling at the end.](#styling)
+
+## Implementation
+
+Now we have to go ahead and implement this:
+
+First, we have to define some constants:
+
+```tsx
+const CPM = 1000; // characters per minute; 70WPM roughly
+// means about ~380 CPM, but people
+// read a lot faster than that so better set it higher
+const CPS = CPM / 60; // characters per second
+
+const INTERVAL_TIME = 1000 / CPS; // 1000ms in a second, gives expression
+// for call to setInterval
+```
+
+Now let's define some state:
+
+```tsx
+let input = "The text we have to type";
+let caretPos = 0;
+let len = input.length;
+let timer;
+```
+
+And set up the timer:
+
+```tsx
+timer = useInterval(() => {
+	if (caretPos < len) {
+		caretPos++;
+	}
+}, INTERVAL_TIME);
+```
+
+Now, for the code to compute the text on the left and the right of the caret.
+
+Declare them in the list of state variables:
+
+```tsx
+let input = "The text we have to type";
+let caretPos = 0;
+let len = input.length;
+let timer;
+
+let left = "";
+let right = input;
+```
+
+And change them every time the caret moves:
+
+```tsx
+$: {
+	left = input.substring(0, caretPos);
+	right = input.substring(caretPos);
+}
+```
+
+And display them in the HTML:
+
+```tsx
+<div class='typing-container'>
+  <span class='typed-text'>
+    {left}
+  </span>
+	<span class='caret' />
+	<span class='to-type-text'>
+    {right}
+  </span>
+</div>
+```
+
+Now this is fully functional, but not when you want to put tags in the text; we can change the above to `{@html left}`
+and `{@html right}`:
+
+```tsx
+<div class='typing-container'>
+  <span class='typed-text'>
+    {@html left}
+  </span>
+	<span class='caret' />
+	<span class='to-type-text'>
+    {@html right}
+  </span>
+</div>
+```
+
+But this also would not work, because the tags are still "butchered", for the lack of a better word.
+
+So we enter [challenge #1](#challenge-1-tags)
+
+## Challenge #1: Tags
+
+So let's say that `input` is:
+
+```tsx
+let input = "<b>This text</b> is bold";
+```
+
+We could just jump over tags when we encounter them when we do `caretPos++` in the interval, but that would not work, as
+this is what the browser will end up seeing
+(when the caret is on the first space):
+
+[//]: # (@formatter:off)
+```html
+<div class='typing-container'>
+  <span class='typed-text'>
+    <b>This
+  </span>
+  <span class='caret' />
+  <span class='to-type-text'>
+    text</b> is bold
+  </span>
+</div>
+```
+[//]: # (@formatter:on)
+
+A strategy that works however, is closing all the tags in `left`, and then reopening all of them before any character
+in `right`.
+
+This would give us:
+
+```html
+
+<div class='typing-container'>
+  <span class='typed-text'>
+    <b>This</b>
+  </span>
+	<span class='caret' />
+	<span class='to-type-text'>
+    <b>text</b> is bold
+  </span>
+</div>
+```
+
+This requires us to be aware of where there is a tag, and where there isn't, so we will change our input format a
+little:
+
+```tsx
+let input = [
+	{ tag: "b" },
+	{ text: "This text" },
+	{ closeTag: "b" },
+	{ text: "is bold" }
+];
+```
+
+Let's also give some types to this:
+
+```ts
+type TagAttrs = { [key: string]: string };
+type Event = {
+	tag: string, // tag
+	tagAttrs?: TagAttrs, // tag attributes
+	close?: boolean // whether this tag is quickly closed, e.g. the `/` in `<br />`
+} | {
+	text: string // the text
+} | {
+	closeTag: string // the tag to close
+};
+```
+
+Then a basic utility to render a tag to HTML:
+
+```tsx
+const fmt_tag = (tag: {
+	tag: string,
+	tagAttrs?: TagAttrs,
+	close?: boolean
+}) => {
+	let attrs = Object.entries(tag.tagAttrs || {}).map(([key, value]) => `${key}="${value}"`).join(' ');
+	if (attrs !== '') {
+		attrs = ` ${attrs} `;
+	}
+	const closed = tag.close ? '/' : '';
+	return `<${tag.tag}${attrs}${closed}>`;
+}
+```
+
+Now for rendering:
+
+```tsx
+const render = (input: Event[], caretPos: number, increasing: boolean = true): { left: string, right: string, tagEnd: number } => {
+	let len = 0;
+	let left = "";
+	let right = "";
+	let tagEnd = -1; // tag_end is still desirable to have, to jump over it
+
+	let tag_stack = [];
+	let end_stack = [];
+
+	for (const event of input) {
+		let nextLen;
+		// set nextLen and update tag stack
+		if (event.text) {
+			nextLen = len + event.text.len;
+		} else if (event.tag) {
+			nextLen = len + fmt_tag(event).len;
+
+			if (!event.close) tag_stack.push(event);
+		} else if (event.closeTag) {
+			nextLen = len + `</${event.closeTag}>`.length;
+
+			tag_stack.pop();
+		}
+
+		// if the caret is in the current "event", then we found the end_stack
+		// (the stack we will use to build the tags).
+		if (len <= caretPos && nextLen > caretPos) {
+			end_stack = Array.from(tag_stack);
+
+			if (event.tag || event.closeTag) {
+				tag_end = increasing ? nextLen : len;
+			}
+		}
+
+		// actually add to left or right
+		// depending on caret position
+		if (caretPos >= nextLen) {
+			if (event.text) {
+				left += event.text;
+			} else if (event.tag) {
+				left += fmt_tag(event);
+			} else if (event.closeTag) {
+				left += `</${event.closeTag}>`;
+			}
+		} else {
+			if (event.text) {
+				if (caretPos >= len) {
+					left += event.text.substring(0, caretPos - len);
+					right += event.text.substring(caretPos - len);
+				} else {
+					right += event.text;
+				}
+			} else if (event.tag) {
+				if (caretPos >= len) {
+					left += fmt_tag(event);
+				} else {
+					right += fmt_tag(event);
+				}
+			} else if (event.closeTag) {
+				if (caretPos >= len) {
+					left += `</${event.closeTag}>`;
+				} else {
+					right += `</${event.closeTag}>`;
+				}
+			}
+		}
+
+
+		len = nextLen;
+	}
+
+	// closing left tags and opening right tags:
+	let leftClosing = end_stack.map(e => `</${e.tag}>`).reverse().join('');
+	let rightOpening = end_stack.map(fmt_tag).join('');
+
+	return {
+		left: left + leftClosing,
+		right: rightOpening + right,
+		tagEnd
+	};
+}
+```
+
+But we also have to know the length of the input, to know when we reach the end.
+
+```tsx
+const computeLen = (input: Events[]): number => {
+	let len = 0;
+	for (const event of input) {
+		if (event.text) {
+			len += event.text.len;
+		} else if (event.tag) {
+			len += fmt_tag(event).len;
+		} else if (event.closeTag) {
+			len += `</${event.closeTag}>`.length;
+		}
+	}
+
+	return len;
+}
+```
+
+And then use that for the input length:
+
+```tsx
+let len = computeLen(input);
+```
+
+Let's now add the `tagEnd` state variable:
+
+```tsx
+let left = "";
+let right = input;
+let tagEnd = -1;
+```
+
+And then changing the computation of the `left` and `right` vars:
+
+```tsx
+$: {
+	const results = compute(input, caretPos);
+
+	left = results.left;
+	right = results.right;
+	tagEnd = results.tagEnd;
+}
+```
+
+And then change the interval code:
+
+```tsx
+timer = useInterval(() => {
+	if (caretPos >= len) return;
+
+	if (tagEnd !== -1) caretPos = tagEnd;
+	else caretPos++;
+}, INTERVAL_TIME);
+```
+
+## Styling
+
+```css
+.typed-text {
+
+}
+
+.to-type-text {
+
+}
+
+.caret {
+
+}
+```
+
+For the `.typed-text` and `.to-type-text`, we only have to hint the browser not to use font ligatures:
+
+```css
+.typed-text {
+    font-variant-ligatures: none;
+}
+
+.to-type-text {
+    font-variant-ligatures: none;
+}
+```
+
+And decrease opacity of the text we have to type:
+
+```css
+.to-type-text {
+    font-variant-ligatures: none;
+    opacity: 0.3; /* can be whatever you want */
+}
+```
+
+Next comes the caret:
+
+```css
+.caret {
+    border-left: 1px solid black;
+    height: 100%;
+    margin-right: -1px; /* to not offset the text by the caret */
+}
+```
+
+[Full component implementation](https://github.com/oaleaf/oaleaf.dev/blob/trunk/src/lib/TypingContainer.svelte)
+
+## Where to go from here
+
+- Type text and then delete and loop (pass `increase = false` to `render` to get the correct `tagEnd`) + loop through
+  multiple texts + make deleting faster than typing
+- Make the caret stationary for a little while at the end
+  (or both ends if you did the previous)
+- While the caret is stationary, implement a caret animation
+- Use a html parser to get the `Event[]` from a `string`

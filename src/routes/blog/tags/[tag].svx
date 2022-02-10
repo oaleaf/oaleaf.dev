@@ -1,0 +1,17 @@
+---
+layout: blog_root
+---
+
+<script>
+	import { page } from '$app/stores';
+	import Filter from '$lib/blog/Filter.svelte';
+
+	let tag;
+
+    $: {
+        tag = $page.params.tag;
+    }
+</script>
+
+<h1>Posts tagged with {tag}</h1>
+<Filter filter={(post) => (post.tags || []).includes(tag)} />

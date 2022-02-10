@@ -1,0 +1,17 @@
+---
+layout: blog_root
+---
+
+<script>
+	import { page } from '$app/stores';
+	import Filter from '$lib/blog/Filter.svelte';
+
+	let author;
+
+    $: {
+        author = $page.params.author;
+    }
+</script>
+
+<h1>Posts written by {author}</h1>
+<Filter filter={(post) => post.author === author} />

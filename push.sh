@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 rm -rf site_build
 npm run build
-cp -r .svelte-kit/cloudflare site_build
+cp -r build site_build
 cd site_build
 git init
 git branch -M cf-pages

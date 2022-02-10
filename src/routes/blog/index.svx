@@ -1,0 +1,12 @@
+---
+layout: blog_root
+---
+
+<script>
+	import PostRef from '$lib/blog/PostRef.svelte';
+	import { BlogPosts } from '$lib/blog/BlogPosts.ts';
+</script>
+
+{#each BlogPosts as post}
+	<PostRef {...post} />
+{/each}

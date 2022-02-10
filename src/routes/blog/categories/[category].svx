@@ -1,0 +1,17 @@
+---
+layout: blog_root
+---
+
+<script>
+	import { page } from '$app/stores';
+	import Filter from '$lib/blog/Filter.svelte';
+
+	let category;
+
+    $: {
+        category = $page.params.category;
+    }
+</script>
+
+<h1>Posts in category {category}</h1>
+<Filter filter={(post) => post.category === category} />

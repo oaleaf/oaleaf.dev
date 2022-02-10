@@ -34,8 +34,8 @@
 	};
 
 	const available_texts: string[] = [
-		'You can find my blog <a href="https://blog.oaleaf.dev/">here</a>.',
-		'Or you can go back to <a href="/">the homepage</a>.',
+		'My life is a lie... have a nice day I guess.',
+		'Go back to <a href="/">the homepage</a>.',
 		'Fun fact: I still don\'t know what I am doing<sup><u>[1]</u></sup>.<br/><br/><sup><u>[1]</u></sup> according to internet strangers.'
 	].concat(interests(
 		'programming language implementations',
@@ -72,5 +72,3 @@
 	<Footer tab_footer={show_tab_hint} />
 </div>
 
-<style>
-</style>

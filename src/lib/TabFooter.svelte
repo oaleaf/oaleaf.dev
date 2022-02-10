@@ -11,6 +11,12 @@
         width: min(60%, 700px);
     }
 
+    @media (max-width: 700px) {
+        .tab-footer {
+            display: none;
+        }
+    }
+
     .tab-hint-container {
         width: 100%;
         opacity: 0.2;
